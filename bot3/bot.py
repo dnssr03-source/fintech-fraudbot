@@ -1,128 +1,215 @@
 import discord
-import anthropic
 import os
 import asyncio
-import json
-from datetime import datetime
+import xml.etree.ElementTree as ET
 import urllib.request
-import urllib.parse
+from datetime import datetime, timezone
+import html
+import re
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-NEWS_API_KEY = os.environ["NEWS_API_KEY"]
 CANAL_NOTICIAS_ID = int(os.environ["CANAL_NOTICIAS_ID"])
 
 intents = discord.Intents.default()
-intents.message_content = True
 client = discord.Client(intents=intents)
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-def buscar_noticias():
-    queries = [
-        "financial fraud detection machine learning",
-        "fraude financeira digital",
-        "payment fraud fintech"
-    ]
+# ─────────────────────────────────────────────────────────────
+# FONTES RSS GRATUITAS — sem necessidade de API paga
+# ─────────────────────────────────────────────────────────────
+
+RSS_FEEDS = [
+    {
+        "nome": "KrebsOnSecurity",
+        "url": "https://krebsonsecurity.com/feed/",
+        "emoji": "🔐"
+    },
+    {
+        "nome": "Fraud Magazine (ACFE)",
+        "url": "https://www.fraud-magazine.com/rss.xml",
+        "emoji": "🏦"
+    },
+    {
+        "nome": "Finextra — Fraud",
+        "url": "https://www.finextra.com/rss/rssfeeds.aspx?section=fraud",
+        "emoji": "💳"
+    },
+    {
+        "nome": "The Paypers",
+        "url": "https://thepaypers.com/rss/all",
+        "emoji": "💰"
+    },
+    {
+        "nome": "Google News — Financial Fraud",
+        "url": "https://news.google.com/rss/search?q=financial+fraud+machine+learning&hl=en&gl=US&ceid=US:en",
+        "emoji": "📰"
+    },
+    {
+        "nome": "Google News — Fraude Financeira",
+        "url": "https://news.google.com/rss/search?q=fraude+financeira+detecao&hl=pt&gl=PT&ceid=PT:pt",
+        "emoji": "🇵🇹"
+    }
+]
+
+KEYWORDS_RELEVANTES = [
+    "fraud", "fraude", "machine learning", "fintech", "payment",
+    "detection", "deteção", "financial", "financeiro", "scam",
+    "phishing", "cybercrime", "banking", "transaction", "transação",
+    "artificial intelligence", "inteligência artificial", "data",
+    "credit card", "cartão", "chargeback", "money laundering"
+]
+
+def limpar_html(texto):
+    if not texto:
+        return ""
+    texto = html.unescape(texto)
+    texto = re.sub(r'<[^>]+>', '', texto)
+    texto = re.sub(r'\s+', ' ', texto).strip()
+    return texto[:400] + "..." if len(texto) > 400 else texto
+
+def e_relevante(titulo, descricao):
+    texto = (titulo + " " + (descricao or "")).lower()
+    return any(kw.lower() in texto for kw in KEYWORDS_RELEVANTES)
+
+def buscar_rss(url):
     artigos = []
-    for query in queries:
-        params = urllib.parse.urlencode({
-            "q": query,
-            "language": "en",
-            "sortBy": "publishedAt",
-            "pageSize": 3,
-            "apiKey": NEWS_API_KEY
-        })
-        url = f"https://newsapi.org/v2/everything?{params}"
-        try:
-            with urllib.request.urlopen(url, timeout=10) as r:
-                data = json.loads(r.read())
-                if data.get("articles"):
-                    artigos.extend(data["articles"][:3])
-        except Exception as e:
-            print(f"Erro ao buscar notícias para '{query}': {e}")
-    return artigos[:6]
-
-def resumir_noticia(titulo, descricao, url):
-    prompt = f"""És o assistente de um projeto académico sobre Deteção de Fraude em Transações Financeiras com Machine Learning na Coimbra Business School.
-
-Escreve um resumo curto (máximo 3 frases) desta notícia, em português europeu, destacando a sua relevância para o tema de fraude financeira e machine learning. Sê direto e informativo.
-
-Título: {titulo}
-Descrição: {descricao}
-URL: {url}
-
-Formato da resposta:
-RESUMO: [3 frases máximo]
-RELEVÂNCIA: [1 frase ligando ao projeto]"""
-
     try:
-        response = anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text.strip()
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            conteudo = r.read()
+        root = ET.fromstring(conteudo)
+        channel = root.find("channel")
+        if channel is None:
+            return []
+        items = channel.findall("item")[:5]
+        for item in items:
+            titulo = limpar_html(item.findtext("title", ""))
+            descricao = limpar_html(item.findtext("description", ""))
+            link = item.findtext("link", "")
+            pub_date = item.findtext("pubDate", "")
+            if titulo and e_relevante(titulo, descricao):
+                artigos.append({
+                    "titulo": titulo,
+                    "descricao": descricao,
+                    "link": link,
+                    "data": pub_date
+                })
     except Exception as e:
-        return f"Não foi possível gerar resumo: {e}"
+        print(f"Erro ao ler RSS {url}: {e}")
+    return artigos
+
+def gerar_resumo_local(titulo, descricao):
+    titulo_lower = titulo.lower()
+    descricao_lower = (descricao or "").lower()
+    texto = titulo_lower + " " + descricao_lower
+
+    if "machine learning" in texto or "ai" in texto or "artificial intelligence" in texto or "inteligência artificial" in texto:
+        contexto = "Relevante para a Skill 2 e o Agente IA do projeto — demonstra aplicações reais de ML na deteção de fraude."
+    elif "regulation" in texto or "regulação" in texto or "psd2" in texto or "gdpr" in texto or "rgpd" in texto or "dora" in texto:
+        contexto = "Diretamente relacionado com o quadro regulatório abordado na revisão de literatura (Skill 1)."
+    elif "phishing" in texto or "account takeover" in texto or "credential" in texto:
+        contexto = "Illustra a tipologia Account Takeover (ATO) estudada na revisão de literatura."
+    elif "card" in texto or "payment" in texto or "cartão" in texto or "pagamento" in texto:
+        contexto = "Relacionado com fraude card-not-present (CNP), o tipo mais prevalente no dataset utilizado."
+    elif "money laundering" in texto or "lavagem" in texto:
+        contexto = "Relacionado com lavagem de dinheiro, uma das tipologias de fraude estudadas no projeto."
+    elif "bank" in texto or "banco" in texto or "financial" in texto or "financeiro" in texto:
+        contexto = "Contexto de fraude no setor bancário, diretamente relevante para o projeto."
+    else:
+        contexto = "Notícia relevante sobre fraude financeira e segurança digital no setor Fintech."
+
+    return contexto
 
 async def publicar_noticias():
     await client.wait_until_ready()
     canal = client.get_channel(CANAL_NOTICIAS_ID)
+
     if not canal:
-        print(f"Erro: Canal com ID {CANAL_NOTICIAS_ID} não encontrado.")
+        print(f"❌ Canal {CANAL_NOTICIAS_ID} não encontrado.")
         return
 
     while not client.is_closed():
         try:
             now = datetime.now()
-            print(f"[{now.strftime('%H:%M')}] A verificar notícias...")
-            artigos = buscar_noticias()
+            print(f"[{now.strftime('%H:%M')}] A recolher notícias via RSS...")
 
-            if artigos:
+            todos_artigos = []
+            for feed in RSS_FEEDS:
+                artigos = buscar_rss(feed["url"])
+                for a in artigos:
+                    a["fonte_nome"] = feed["nome"]
+                    a["fonte_emoji"] = feed["emoji"]
+                todos_artigos.extend(artigos)
+
+            # Remove duplicados por título
+            vistos = set()
+            artigos_unicos = []
+            for a in todos_artigos:
+                chave = a["titulo"][:60].lower()
+                if chave not in vistos:
+                    vistos.add(chave)
+                    artigos_unicos.append(a)
+
+            artigos_final = artigos_unicos[:5]
+
+            if artigos_final:
                 embed_intro = discord.Embed(
-                    title="📰 Atualização Diária — Fraude Financeira & ML",
-                    description=f"Notícias relevantes para o projeto • {now.strftime('%d/%m/%Y às %H:%M')}",
+                    title="📰 Atualização Diária — Fraude Financeira & FinTech",
+                    description=(
+                        f"**{len(artigos_final)} notícias relevantes** para o projeto • "
+                        f"{now.strftime('%d/%m/%Y às %H:%M')}\n"
+                        f"*Recolhidas automaticamente de fontes especializadas em fraude financeira*"
+                    ),
                     color=discord.Color.dark_blue()
                 )
                 await canal.send(embed=embed_intro)
 
-                for artigo in artigos[:4]:
-                    titulo = artigo.get("title", "Sem título")
-                    descricao = artigo.get("description", "") or artigo.get("content", "") or "Sem descrição disponível."
-                    url_artigo = artigo.get("url", "")
-                    fonte = artigo.get("source", {}).get("name", "Fonte desconhecida")
-                    imagem = artigo.get("urlToImage", None)
-
-                    resumo_texto = resumir_noticia(titulo, descricao[:500], url_artigo)
+                for artigo in artigos_final:
+                    resumo_contexto = gerar_resumo_local(artigo["titulo"], artigo["descricao"])
 
                     embed = discord.Embed(
-                        title=titulo[:250],
-                        url=url_artigo,
+                        title=artigo["titulo"][:250],
+                        url=artigo["link"] if artigo["link"] else None,
                         color=discord.Color.blue()
                     )
-                    embed.add_field(name="Resumo IA", value=resumo_texto[:1000], inline=False)
-                    embed.set_footer(text=f"Fonte: {fonte}")
-                    if imagem:
-                        embed.set_thumbnail(url=imagem)
-
+                    if artigo["descricao"]:
+                        embed.add_field(
+                            name="Resumo",
+                            value=artigo["descricao"][:500],
+                            inline=False
+                        )
+                    embed.add_field(
+                        name="🎓 Relevância para o Projeto",
+                        value=resumo_contexto,
+                        inline=False
+                    )
+                    embed.set_footer(
+                        text=f"{artigo['fonte_emoji']} {artigo['fonte_nome']}"
+                        + (f" • {artigo['data'][:22]}" if artigo.get('data') else "")
+                    )
                     await canal.send(embed=embed)
                     await asyncio.sleep(2)
 
                 embed_fim = discord.Embed(
-                    description="*Resumos gerados automaticamente pelo Claude Sonnet 4.6 (Anthropic) • Projeto FinTech CBS 2025/2026*",
+                    description=(
+                        f"*Notícias recolhidas automaticamente via RSS • "
+                        f"Projeto FinTech — Deteção de Fraude com ML • CBS 2025/2026*"
+                    ),
                     color=discord.Color.dark_grey()
                 )
                 await canal.send(embed=embed_fim)
+                print(f"✅ {len(artigos_final)} notícias publicadas com sucesso.")
+            else:
+                print("⚠️ Nenhuma notícia relevante encontrada desta vez.")
 
         except Exception as e:
-            print(f"Erro no ciclo de notícias: {e}")
+            print(f"❌ Erro no ciclo de notícias: {e}")
 
-        # Aguarda 24 horas até à próxima publicação
+        # Aguarda 24 horas
         await asyncio.sleep(24 * 60 * 60)
 
 @client.event
 async def on_ready():
-    print(f"Bot de notícias ligado como {client.user}")
+    print(f"✅ Bot 3 (Notícias) ligado como {client.user}")
     client.loop.create_task(publicar_noticias())
 
 client.run(DISCORD_TOKEN)
