@@ -3,6 +3,11 @@ from discord import app_commands
 import os
 import urllib.request
 import json
+import urllib.parse
+import socket
+import ssl
+import whois
+import datetime
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -344,5 +349,94 @@ async def analisar_ip(interaction: discord.Interaction, ip: str):
         
     except Exception as e:
         await interaction.followup.send(f"❌ Erro ao contactar o servidor de threat intel: {str(e)}")
+
+# ==========================================
+# SKILL EXTERNA: MERCHANT RISK (WEB SCRAPING REAL)
+# ==========================================
+@tree.command(name="analisar_loja", description="Analisa o risco de uma loja online (SSL e Idade do Domínio)")
+async def analisar_loja(interaction: discord.Interaction, url_loja: str):
+    
+    # IMPORTANTE: Avisa o Discord para esperar, pois o lookup real demora alguns segundos!
+    await interaction.response.defer()
+
+    try:
+        # 1. Limpeza do URL (Tirar o https:// e os caminhos extra)
+        if not url_loja.startswith(('http://', 'https://')):
+            url_loja = 'http://' + url_loja
+            
+        parsed_url = urllib.parse.urlparse(url_loja)
+        dominio = parsed_url.netloc
+
+        if dominio.startswith('www.'):
+            dominio = dominio[4:]
+
+        score = 100 # Começa com confiança máxima
+        riscos = []
+
+        # 2. Verificação Ativa de SSL (Ping real à porta 443 do servidor)
+        tem_ssl = False
+        try:
+            context = ssl.create_default_context()
+            with socket.create_connection((dominio, 443), timeout=3) as sock:
+                with context.wrap_socket(sock, server_hostname=dominio) as ssock:
+                    tem_ssl = True
+        except Exception:
+            pass
+
+        if not tem_ssl:
+            score -= 40
+            riscos.append("⚠️ **Sem Certificado SSL:** O site não encripta os dados do cartão de crédito.")
+
+        # 3. Análise WHOIS (Registo Global de Domínios)
+        idade_dias_str = "Desconhecida"
+        try:
+            domain_info = whois.whois(dominio)
+            creation_date = domain_info.creation_date
+            
+            # Algumas extensões de domínio devolvem uma lista de datas
+            if type(creation_date) is list:
+                creation_date = creation_date[0]
+                
+            if creation_date:
+                idade_dias = (datetime.datetime.now() - creation_date).days
+                idade_dias_str = f"{idade_dias} dias"
+                
+                if idade_dias < 30:
+                    score -= 50
+                    riscos.append(f"⚠️ **Domínio Criança:** O site foi criado há apenas {idade_dias} dias. Lojas fraudulentas operam com sites recém-criados.")
+                elif idade_dias < 180:
+                    score -= 20
+                    riscos.append(f"⚠️ **Domínio Jovem:** O site tem menos de 6 meses ({idade_dias} dias). Risco moderado.")
+            else:
+                score -= 10
+                riscos.append("⚠️ **Registo Oculto:** Não foi possível verificar quando o site foi criado.")
+        except Exception:
+            riscos.append("⚠️ **Blindagem WHOIS:** O proprietário escondeu os dados do registo (prática comum em burlas).")
+
+        # 4. Cálculo e Apresentação
+        if score >= 80:
+            cor = 0x00FF00
+            status = "🟢 LOJA APARENTA SER SEGURA"
+        elif score >= 50:
+            cor = 0xFFA500
+            status = "🟠 RISCO MODERADO (Requer cuidado)"
+        else:
+            cor = 0xFF0000
+            status = "🔴 ALTO RISCO DE BURLA"
+
+        texto_riscos = "\n".join(riscos) if riscos else "Nenhum fator de risco óbvio encontrado nas camadas técnicas."
+
+        embed = discord.Embed(title="🛒 Predição de Merchant Risk", description=f"Análise técnica efetuada ao alvo: `{dominio}`", color=cor)
+        embed.add_field(name="Idade do Domínio", value=idade_dias_str, inline=True)
+        embed.add_field(name="Proteção de Pagamento", value="Ativa (HTTPS)" if tem_ssl else "Vulnerável", inline=True)
+        embed.add_field(name="Trust Score", value=f"**{score}/100**\n{status}", inline=False)
+        embed.add_field(name="Indicadores Detetados", value=texto_riscos, inline=False)
+        embed.set_footer(text="Dados extraídos em tempo real via WHOIS Lookup e SSL Socket Protocol.")
+
+        # Em vez de response.send_message, usamos followup.send porque usamos o defer() lá em cima!
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ Ocorreu um erro ao raspar os dados da loja `{url_loja}`. Verifica se o URL é válido.")
     
 client.run(DISCORD_TOKEN)
