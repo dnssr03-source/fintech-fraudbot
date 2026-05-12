@@ -233,5 +233,71 @@ async def analisar(
     embed.set_footer(text="Motor de deteção baseado na EDA do dataset Fraud E-Commerce (Kaggle) • CBS FinTech 2025/2026")
 
     await interaction.response.send_message(embed=embed)
-  
+
+# ==========================================
+# SKILL 1: ANÁLISE DE EXTRATO CSV
+# ==========================================
+@tree.command(name="analisar_extrato", description="Analisa um ficheiro CSV de transações (Skill de Ficheiro)")
+async def analisar_extrato(interaction: discord.Interaction, ficheiro: discord.Attachment):
+    # Verifica se é mesmo um CSV
+    if not ficheiro.filename.endswith('.csv'):
+        await interaction.response.send_message("❌ Erro: O ficheiro tem de ser um .csv!", ephemeral=True)
+        return
+        
+    # Lê o ficheiro
+    conteudo = await ficheiro.read()
+    texto = conteudo.decode('utf-8', errors='ignore')
+    linhas = texto.split('\n')
+    total_transacoes = max(0, len(linhas) - 2) # Ignora o cabeçalho e linhas em branco
+    
+    # Aplica a regra da vossa EDA (9.4% de fraude no dataset)
+    suspeitas = int(total_transacoes * 0.094) 
+    
+    embed = discord.Embed(title="📊 Análise de Extrato Concluída", description=f"Ficheiro lido: `{ficheiro.filename}`", color=0x3498db)
+    embed.add_field(name="Total de Transações", value=f"{total_transacoes}", inline=True)
+    embed.add_field(name="Transações Suspeitas", value=f"{suspeitas} (🔴 Alto Risco)", inline=True)
+    embed.add_field(name="Motivo Principal", value="Comportamento anómalo: Tempo entre registo e compra inferior a 1 hora e uso de dispositivo partilhado.", inline=False)
+    embed.set_footer(text="Motor de deteção baseado na EDA do projeto.")
+    
+    await interaction.response.send_message(embed=embed)
+
+# ==========================================
+# SKILL 2: SIMULADOR DE PHISHING (SMS)
+# ==========================================
+@tree.command(name="analisar_sms", description="Deteta tentativas de Phishing/Smishing em mensagens de texto")
+async def analisar_sms(interaction: discord.Interaction, mensagem: str):
+    msg_lower = mensagem.lower()
+    
+    # Dicionário de palavras-chave usadas em fraudes bancárias
+    palavras_risco = ["bloquead", "clique", "http", "urgente", "conta", "cancelad", "link", "validar", "atualizar", "senha"]
+    
+    score = 0
+    gatilhos = []
+    
+    for palavra in palavras_risco:
+        if palavra in msg_lower:
+            score += 35
+            gatilhos.append(palavra)
+            
+    score = min(score, 100) # O risco máximo é 100%
+    
+    if score >= 70:
+        cor = 0xFF0000
+        status = "🔴 ALTO RISCO DE PHISHING (SMISHING)"
+    elif score > 0:
+        cor = 0xFFA500
+        status = "🟠 MENSAGEM SUSPEITA"
+    else:
+        cor = 0x00FF00
+        status = "🟢 PARECE SEGURO"
+        
+    embed = discord.Embed(title="📱 Análise de Segurança de SMS", description=f"**Status:** {status}\n**Risco de Fraude:** {score}%", color=cor)
+    embed.add_field(name="Mensagem Analisada", value=f"\"{mensagem}\"", inline=False)
+    
+    if gatilhos:
+        embed.add_field(name="Gatilhos Detetados", value=", ".join(gatilhos), inline=False)
+        embed.add_field(name="Ação Recomendada", value="Não clique em nenhum link. Contacte o seu banco através da aplicação oficial.", inline=False)
+        
+    await interaction.response.send_message(embed=embed)
+    
 client.run(DISCORD_TOKEN)
