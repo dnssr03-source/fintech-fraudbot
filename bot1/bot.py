@@ -234,35 +234,5 @@ async def analisar(
 
     await interaction.response.send_message(embed=embed)
 
-    @bot.tree.command(name="relatorio", description="Gera um relatório de incidente de fraude detalhado (Skill Extra)")
-
-@bot.tree.command(name="relatorio", description="Gera um relatório de incidente de fraude (Skill Extra)")
-async def relatorio(interaction: discord.Interaction, id_transacao: str, valor: float, pais: str, tipo_fraude: str):
-    
-    # Criação do texto do relatório com formatação
-    relatorio_texto = f"""
-    **📋 RELATÓRIO DE INCIDENTE DE SEGURANÇA**
-    *Gerado por IA Fintech - Conformidade PSD2 / RGPD*
-    
-    **1. Dados da Transação**
-    • ID: `{id_transacao}`
-    • Valor: ${valor}
-    • Origem: {pais}
-    
-    **2. Tipologia Identificada**
-    • Categoria: {tipo_fraude}
-    • Indicadores: O padrão enquadra-se nas descobertas da nossa EDA.
-    
-    **3. Ações Recomendadas**
-    • Bloqueio imediato do cartão/conta.
-    • Notificação ao cliente via 3D Secure / Autenticação Forte (SCA).
-    • Retenção de fundos preventiva.
-    """
-    
-    # Criar um painel (embed)
-    embed = discord.Embed(title="🚨 Relatório Gerado com Sucesso", description=relatorio_texto, color=0xFFA500)
-    embed.set_footer(text="Projeto Fintech - Deteção de Fraude com ML")
-    
-    await interaction.response.send_message(embed=embed)
-
+  
 client.run(DISCORD_TOKEN)
