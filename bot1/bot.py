@@ -351,92 +351,90 @@ async def analisar_ip(interaction: discord.Interaction, ip: str):
         await interaction.followup.send(f"❌ Erro ao contactar o servidor de threat intel: {str(e)}")
 
 # ==========================================
-# SKILL EXTERNA: MERCHANT RISK (WEB SCRAPING REAL)
+# SKILL 6: MERCHANT RISK V2 (RIGOROSA)
 # ==========================================
-@tree.command(name="analisar_loja", description="Analisa o risco de uma loja online (SSL e Idade do Domínio)")
+@tree.command(name="analisar_loja", description="Analisa o risco real de uma loja online (Versão Rigorosa)")
 async def analisar_loja(interaction: discord.Interaction, url_loja: str):
-    
-    # IMPORTANTE: Avisa o Discord para esperar, pois o lookup real demora alguns segundos!
     await interaction.response.defer()
 
     try:
-        # 1. Limpeza do URL (Tirar o https:// e os caminhos extra)
-        if not url_loja.startswith(('http://', 'https://')):
-            url_loja = 'http://' + url_loja
-            
-        parsed_url = urllib.parse.urlparse(url_loja)
-        dominio = parsed_url.netloc
+        # Limpeza do URL
+        url_limpo = url_loja.lower().replace("https://", "").replace("http://", "").split('/')[0]
+        dominio = url_limpo.replace("www.", "")
 
-        if dominio.startswith('www.'):
-            dominio = dominio[4:]
+        score = 100
+        detalhes_risco = []
 
-        score = 100 # Começa com confiança máxima
-        riscos = []
+        # 1. Verificação de Extensões Suspeitas (TLDs de baixo custo)
+        tlds_perigosos = ['.top', '.xyz', '.shop', '.click', '.site', '.biz', '.online']
+        for tld in tlds_perigosos:
+            if dominio.endswith(tld):
+                score -= 30
+                detalhes_risco.append(f"🚩 **Extensão Suspeita:** Domínios `{tld}` são frequentemente usados em burlas temporárias.")
 
-        # 2. Verificação Ativa de SSL (Ping real à porta 443 do servidor)
+        # 2. Verificação de Palavras-Chave de Engano (Typosquatting)
+        keywords_fraude = ['login', 'verify', 'secure', 'update', 'banco', 'suporte', 'ajuda']
+        for key in keywords_fraude:
+            if key in dominio:
+                score -= 20
+                detalhes_risco.append(f"🚩 **URL Manipulado:** O nome contém a palavra `{key}`, comum em ataques de phishing.")
+
+        # 3. Verificação de SSL (Ativa)
         tem_ssl = False
         try:
             context = ssl.create_default_context()
             with socket.create_connection((dominio, 443), timeout=3) as sock:
                 with context.wrap_socket(sock, server_hostname=dominio) as ssock:
                     tem_ssl = True
-        except Exception:
+        except:
             pass
 
         if not tem_ssl:
             score -= 40
-            riscos.append("⚠️ **Sem Certificado SSL:** O site não encripta os dados do cartão de crédito.")
+            detalhes_risco.append("❌ **Falta de Encriptação:** Ligação insegura (Sem SSL).")
 
-        # 3. Análise WHOIS (Registo Global de Domínios)
-        idade_dias_str = "Desconhecida"
+        # 4. Análise de Idade (WHOIS)
+        idade_info = "Indisponível"
         try:
-            domain_info = whois.whois(dominio)
-            creation_date = domain_info.creation_date
+            w = whois.whois(dominio)
+            data_criacao = w.creation_date
+            if isinstance(data_criacao, list):
+                data_criacao = data_criacao[0]
             
-            # Algumas extensões de domínio devolvem uma lista de datas
-            if type(creation_date) is list:
-                creation_date = creation_date[0]
-                
-            if creation_date:
-                idade_dias = (datetime.datetime.now() - creation_date).days
-                idade_dias_str = f"{idade_dias} dias"
-                
-                if idade_dias < 30:
+            if data_criacao:
+                dias = (datetime.datetime.now() - data_criacao).days
+                idade_info = f"{dias} dias"
+                if dias < 90:
                     score -= 50
-                    riscos.append(f"⚠️ **Domínio Criança:** O site foi criado há apenas {idade_dias} dias. Lojas fraudulentas operam com sites recém-criados.")
-                elif idade_dias < 180:
-                    score -= 20
-                    riscos.append(f"⚠️ **Domínio Jovem:** O site tem menos de 6 meses ({idade_dias} dias). Risco moderado.")
+                    detalhes_risco.append(f"🚩 **Site Recém-Criado:** Domínio com apenas {dias} dias.")
             else:
-                score -= 10
-                riscos.append("⚠️ **Registo Oculto:** Não foi possível verificar quando o site foi criado.")
-        except Exception:
-            riscos.append("⚠️ **Blindagem WHOIS:** O proprietário escondeu os dados do registo (prática comum em burlas).")
+                score -= 30
+                detalhes_risco.append("⚠️ **Data Oculta:** Não foi possível validar a antiguidade do site.")
+        except:
+            score -= 25
+            detalhes_risco.append("⚠️ **Erro WHOIS:** O servidor de registo não respondeu (possível bloqueio de segurança).")
 
-        # 4. Cálculo e Apresentação
+        # Resultado Final
+        score = max(0, score) # Garante que o score não é negativo
         if score >= 80:
-            cor = 0x00FF00
-            status = "🟢 LOJA APARENTA SER SEGURA"
+            cor, status = 0x00FF00, "🟢 SEGURO"
         elif score >= 50:
-            cor = 0xFFA500
-            status = "🟠 RISCO MODERADO (Requer cuidado)"
+            cor, status = 0xFFA500, "🟠 RISCO MODERADO"
         else:
-            cor = 0xFF0000
-            status = "🔴 ALTO RISCO DE BURLA"
+            cor, status = 0xFF0000, "🔴 ALTO RISCO / FRAUDE PROVÁVEL"
 
-        texto_riscos = "\n".join(riscos) if riscos else "Nenhum fator de risco óbvio encontrado nas camadas técnicas."
+        resumo = "\n".join(detalhes_risco) if detalhes_risco else "Nenhum padrão técnico de fraude detetado."
 
-        embed = discord.Embed(title="🛒 Predição de Merchant Risk", description=f"Análise técnica efetuada ao alvo: `{dominio}`", color=cor)
-        embed.add_field(name="Idade do Domínio", value=idade_dias_str, inline=True)
-        embed.add_field(name="Proteção de Pagamento", value="Ativa (HTTPS)" if tem_ssl else "Vulnerável", inline=True)
-        embed.add_field(name="Trust Score", value=f"**{score}/100**\n{status}", inline=False)
-        embed.add_field(name="Indicadores Detetados", value=texto_riscos, inline=False)
-        embed.set_footer(text="Dados extraídos em tempo real via WHOIS Lookup e SSL Socket Protocol.")
+        embed = discord.Embed(title="🔍 Merchant Risk Analysis V2", color=cor)
+        embed.add_field(name="Alvo", value=f"`{dominio}`", inline=True)
+        embed.add_field(name="Antiguidade", value=idade_info, inline=True)
+        embed.add_field(name="Veredito", value=f"**{score}/100 - {status}**", inline=False)
+        embed.add_field(name="Análise de Camadas", value=resumo, inline=False)
+        embed.set_footer(text="Análise baseada em SSL, Idade de Domínio e Heurística de TLD.")
 
-        # Em vez de response.send_message, usamos followup.send porque usamos o defer() lá em cima!
         await interaction.followup.send(embed=embed)
 
     except Exception as e:
-        await interaction.followup.send(f"❌ Ocorreu um erro ao raspar os dados da loja `{url_loja}`. Verifica se o URL é válido.")
+        await interaction.followup.send(f"❌ Erro ao analisar `{url_loja}`. Tenta o formato `loja.com`.")
     
 client.run(DISCORD_TOKEN)
