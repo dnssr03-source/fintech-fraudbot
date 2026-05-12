@@ -8,6 +8,8 @@ import socket
 import ssl
 import whois
 import datetime
+from PIL import Image, ImageChops, ImageEnhance, ExifTags
+import io
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -502,5 +504,96 @@ async def verificar_pagamento(interaction: discord.Interaction, entidade: str, r
     embed.set_footer(text="Baseado em dados de OSINT de esquemas de fraude em Portugal.")
 
     await interaction.response.send_message(embed=embed)
+
+# ==========================================
+# SKILL 7: ANÁLISE FORENSE DE COMPROVATIVOS (ELA & EXIF)
+# ==========================================
+@tree.command(name="analisar_comprovativo", description="Forense Documental: Analisa se um comprovativo foi alterado (Photoshop)")
+async def analisar_comprovativo(interaction: discord.Interaction, comprovativo: discord.Attachment):
+    await interaction.response.defer()
+
+    # 1. Validação de Formato
+    if not comprovativo.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        await interaction.followup.send("❌ Formato não suportado. Por favor envia uma imagem (.jpg, .png).")
+        return
+
+    try:
+        # Lê os bytes reais da imagem enviada no Discord
+        dados_imagem = await comprovativo.read()
+        imagem_original = Image.open(io.BytesIO(dados_imagem)).convert('RGB')
+        
+        score = 100
+        indicadores = []
+
+        # 2. Análise de Metadados (EXIF) em busca de rastros de edição
+        software_edicao = "Não detetado"
+        try:
+            exif_data = imagem_original._getexif()
+            if exif_data:
+                for tag_id, value in exif_data.items():
+                    tag = ExifTags.TAGS.get(tag_id, tag_id)
+                    if tag == 'Software':
+                        software_edicao = str(value)
+                        
+                        # Palavras-chave de softwares de edição gráfica
+                        if any(sus in software_edicao.lower() for sus in ['photoshop', 'adobe', 'gimp', 'canva', 'paint']):
+                            score -= 60
+                            indicadores.append(f"🚩 **Rastro de Edição:** O ficheiro foi salvo com '{software_edicao}'. Comprovativos bancários autênticos não passam por ferramentas de design gráfico.")
+        except Exception:
+            pass # Imagens PNG muitas vezes não têm EXIF, ignoramos
+
+        # Se não há metadata suspeita, adiciona nota
+        if software_edicao == "Não detetado":
+            indicadores.append("✅ **Metadados Limpos:** Sem rastros óbvios de edição de software.")
+
+        # 3. Análise de Nível de Erro (Error Level Analysis - ELA) REAL
+        # Salva uma cópia temporária a 90% de qualidade
+        temp_io = io.BytesIO()
+        imagem_original.save(temp_io, 'JPEG', quality=90)
+        temp_io.seek(0)
+        imagem_comprimida = Image.open(temp_io)
+
+        # Subtrai a original da comprimida para ver o que muda
+        ela_imagem = ImageChops.difference(imagem_original, imagem_comprimida)
+
+        # Realça a diferença ao máximo para que o olho humano (ou o Professor) consiga ver
+        extrema = ela_imagem.getextrema()
+        max_diff = max([ex[1] for ex in extrema])
+        if max_diff == 0:
+            max_diff = 1
+        scale = 255.0 / max_diff
+        ela_imagem = ImageEnhance.Brightness(ela_imagem).enhance(scale)
+
+        # Prepara a imagem gerada para enviar de volta para o Discord
+        saida_io = io.BytesIO()
+        ela_imagem.save(saida_io, 'JPEG')
+        saida_io.seek(0)
+        ficheiro_discord = discord.File(fp=saida_io, filename="analise_forense_ela.jpg")
+
+        # 4. Avaliação e Veredito
+        if score >= 80:
+            cor = 0x00FF00
+            status = "🟢 COMPROVATIVO PARECE AUTÊNTICO"
+            conclusao = "Não foram detetados sinais óbvios de manipulação de metadados. Verifica a imagem ELA abaixo: se os números ou nomes do destinatário estiverem a 'brilhar' mais que o resto do texto, pode ser burla."
+        else:
+            cor = 0xFF0000
+            status = "🔴 ALTO RISCO DE FALSIFICAÇÃO"
+            conclusao = "Sinais de manipulação encontrados! O documento parece ter sido forjado."
+
+        resumo_indicadores = "\n".join(indicadores)
+
+        embed = discord.Embed(title="🔎 Relatório de Análise Forense", color=cor)
+        embed.add_field(name="Veredito", value=f"**{status}**\n{conclusao}", inline=False)
+        embed.add_field(name="Indicadores Técnicos", value=resumo_indicadores, inline=False)
+        embed.add_field(name="O que é o Filtro ELA (Imagem em anexo)?", value="O Error Level Analysis realça pixels editados. Se vires texturas ou textos muito brilhantes e isolados na imagem gerada, são áreas que foram coladas por cima da imagem original.", inline=False)
+        
+        # Anexa a imagem gerada pelo ELA no painel do Discord
+        embed.set_image(url="attachment://analise_forense_ela.jpg")
+        embed.set_footer(text="Motor Híbrido: Metadados EXIF + Computação Gráfica ELA")
+
+        await interaction.followup.send(embed=embed, file=ficheiro_discord)
+
+    except Exception as e:
+        await interaction.followup.send("❌ Ocorreu um erro ao processar a imagem. Verifica se o ficheiro não está corrompido.")
     
 client.run(DISCORD_TOKEN)
