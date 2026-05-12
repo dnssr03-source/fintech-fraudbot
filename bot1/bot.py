@@ -299,5 +299,46 @@ async def analisar_sms(interaction: discord.Interaction, mensagem: str):
         embed.add_field(name="Ação Recomendada", value="Não clique em nenhum link. Contacte o seu banco através da aplicação oficial.", inline=False)
         
     await interaction.response.send_message(embed=embed)
+
+# ==========================================
+# SKILL 3: SIMULADOR DE REDES DE FRAUDE (FRAUD RINGS)
+# ==========================================
+import random # Adiciona este 'import' no início do teu ficheiro, se ainda não o tiveres!
+
+@tree.command(name="rede_fraude", description="Analisa ligações suspeitas a um endereço IP (Graph Network Simulation)")
+async def rede_fraude(interaction: discord.Interaction, ip_suspeito: str):
+    
+    # Simula a procura numa base de dados por nós ligados a este IP
+    qtd_contas = random.randint(3, 7) # Gera um número aleatório de contas falsas
+    
+    # Desenho da rede em ASCII (para dar aquele aspeto de sistema terminal/hacker)
+    grafico_rede = f"""```text
+      [IP ALVO: {ip_suspeito}]
+            │
+    ┌───────┼───────┐
+    │       │       │
+ [User_A] [User_B] [User_C]
+    │       │       │
+    └───────┴───────┘
+     Dispositivo Partilhado
+     Device_ID: A8F9-2B3C
+```"""
+    
+    texto_analise = f"""
+    **🔍 ANÁLISE DE LIGAÇÕES (GRAPH NETWORK)**
+    
+    Foi detetado um aglomerado anómalo (*Fraud Ring*) associado ao IP `{ip_suspeito}`.
+    
+    • **Contas associadas:** {qtd_contas} contas criadas nas últimas 2 horas.
+    • **Padrão:** Todas as contas partilham o mesmo Device ID e tentaram compras abaixo de $40 (limite comum para evitar alertas).
+    • **Alerta EDA:** Conforme a nossa análise exploratória, o uso de dispositivos partilhados aumenta o risco de fraude para 52.5%.
+    """
+    
+    embed = discord.Embed(title="🕸️ Mapeamento de Rede de Fraude Concluído", description=texto_analise, color=0x8A2BE2)
+    embed.add_field(name="Grafo de Ligações", value=grafico_rede, inline=False)
+    embed.add_field(name="Ação de Mitigação", value="Bloqueio do IP e do Device ID (Blacklisting).", inline=False)
+    embed.set_footer(text="Baseado em conceitos de Graph Neural Networks aplicados a Finanças.")
+    
+    await interaction.response.send_message(embed=embed)
     
 client.run(DISCORD_TOKEN)
