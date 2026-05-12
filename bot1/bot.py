@@ -436,5 +436,71 @@ async def analisar_loja(interaction: discord.Interaction, url_loja: str):
 
     except Exception as e:
         await interaction.followup.send(f"❌ Erro ao analisar `{url_loja}`. Tenta o formato `loja.com`.")
+
+# ==========================================
+# SKILL 16: VERIFICADOR DE ENTIDADE MULTIBANCO
+# ==========================================
+@tree.command(name="verificar_pagamento", description="Verifica o risco de uma Entidade Multibanco (Anti-Scam)")
+async def verificar_pagamento(interaction: discord.Interaction, entidade: str, referencia: str = "Não fornecida"):
+    
+    # 1. Base de Conhecimento: Entidades de Confiança (Whitelist)
+    entidades_seguras = {
+        "21098": "EDP - Energias de Portugal",
+        "21159": "Galp Energia",
+        "10611": "Vodafone Portugal",
+        "11249": "MEO / Altice",
+        "20873": "NOS Telecomunicações",
+        "11202": "Via Verde",
+        "10363": "EPAL / Águas"
+    }
+
+    # 2. Base de Risco: Gateways de Pagamento Genéricos (Muito usados em fraudes)
+    # Estas empresas são legítimas, mas qualquer pessoa pode gerar lá referências.
+    entidades_alerta = {
+        "11893": "HiPay Portugal",
+        "11604": "EuPAGO",
+        "12101": "Ifthenpay",
+        "12224": "Easypay",
+        "21312": "Lusopay"
+    }
+
+    entidade = entidade.strip()
+    
+    # 3. Lógica de Verificação
+    if entidade in entidades_seguras:
+        nome_empresa = entidades_seguras[entidade]
+        cor = 0x00FF00
+        status = "🟢 ENTIDADE VERIFICADA (Serviço Oficial)"
+        descricao = f"Esta entidade pertence diretamente à **{nome_empresa}**. É um prestador de serviços legítimo."
+        recomendacao = "Seguro para pagamento direto."
+        
+    elif entidade in entidades_alerta:
+        nome_empresa = entidades_alerta[entidade]
+        cor = 0xFF0000 # Vermelho porque em SMS não solicitados, 99% das vezes é burla
+        status = "🔴 ALERTA DE RISCO (Gateway Genérico)"
+        descricao = f"A entidade pertence à **{nome_empresa}**, que é uma plataforma de pagamentos genérica. Burlões usam muito estas plataformas para mascarar transações."
+        recomendacao = "⚠️ **NÃO PAGUE** se recebeu isto por SMS (ex: 'Aviso de corte EDP' ou 'Olá Mãe/Pai'). A EDP/Fisco NUNCA usa entidades genéricas."
+        
+    else:
+        cor = 0xFFA500
+        status = "🟠 ENTIDADE DESCONHECIDA"
+        descricao = "Esta entidade não está na nossa base de dados oficial de serviços essenciais."
+        recomendacao = "Ligue para a empresa em questão antes de efetuar o pagamento para confirmar os dados."
+
+    # 4. Formatação do Formato da Referência (para ficar bonito)
+    if len(referencia) == 9 and referencia.isdigit():
+        ref_formatada = f"{referencia[:3]} {referencia[3:6]} {referencia[6:]}"
+    else:
+        ref_formatada = referencia
+
+    # 5. Criar o Painel Visual
+    embed = discord.Embed(title="💳 Verificador de Pagamento Multibanco", color=cor)
+    embed.add_field(name="Entidade", value=f"`{entidade}`", inline=True)
+    embed.add_field(name="Referência", value=f"`{ref_formatada}`", inline=True)
+    embed.add_field(name="Diagnóstico", value=f"**{status}**\n{descricao}", inline=False)
+    embed.add_field(name="Recomendação do Agente", value=recomendacao, inline=False)
+    embed.set_footer(text="Baseado em dados de OSINT de esquemas de fraude em Portugal.")
+
+    await interaction.response.send_message(embed=embed)
     
 client.run(DISCORD_TOKEN)
