@@ -1,4 +1,3 @@
 discord.py==2.3.2
 audioop-lts
 python-whois==0.8.0
-Pillow
