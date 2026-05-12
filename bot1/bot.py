@@ -233,35 +233,5 @@ async def analisar(
     embed.set_footer(text="Motor de deteção baseado na EDA do dataset Fraud E-Commerce (Kaggle) • CBS FinTech 2025/2026")
 
     await interaction.response.send_message(embed=embed)
-
-@tree.command(name="relatorio", description="Gera um relatório de incidente de fraude detalhado (Skill Extra)")
-async def relatorio(interaction: discord.Interaction, id_transacao: str, valor: float, pais: str, tipo_fraude: str):
-    
-    # Criação do texto do relatório com formatação
-    relatorio_texto = f"""
-    **📋 RELATÓRIO DE INCIDENTE DE SEGURANÇA**
-    *Gerado por IA Fintech - Conformidade PSD2 / RGPD*
-    
-    **1. Dados da Transação**
-    • ID: `{id_transacao}`
-    • Valor: ${valor}
-    • Origem: {pais}
-    
-    **2. Tipologia Identificada**
-    • Categoria: {tipo_fraude}
-    • Indicadores: O padrão enquadra-se nas descobertas da nossa EDA (ex: uso de dispositivo partilhado ou anomalia de tempo de registo).
-    
-    **3. Ações Recomendadas**
-    • Bloqueio imediato do cartão/conta.
-    • Notificação ao cliente via 3D Secure / Autenticação Forte (SCA).
-    • Retenção de fundos preventiva.
-    """
-    
-    # Criar um painel (embed) para ficar visualmente apelativo
-    embed = discord.Embed(title="🚨 Relatório Gerado com Sucesso", description=relatorio_texto, color=0xFFA500)
-    embed.set_footer(text="Projeto Fintech - Deteção de Fraude com ML")
-    
-    await interaction.response.send_message(embed=embed)
-
   
 client.run(DISCORD_TOKEN)
