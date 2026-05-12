@@ -1,6 +1,8 @@
 import discord
 from discord import app_commands
 import os
+import urllib.request
+import json
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -300,45 +302,47 @@ async def analisar_sms(interaction: discord.Interaction, mensagem: str):
         
     await interaction.response.send_message(embed=embed)
 
-# ==========================================
-# SKILL 3: SIMULADOR DE REDES DE FRAUDE (FRAUD RINGS)
-# ==========================================
-import random # Adiciona este 'import' no início do teu ficheiro, se ainda não o tiveres!
 
-@tree.command(name="rede_fraude", description="Analisa ligações suspeitas a um endereço IP (Graph Network Simulation)")
-async def rede_fraude(interaction: discord.Interaction, ip_suspeito: str):
+
+# ==========================================
+# SKILL 3: INTELIGÊNCIA DE AMEAÇAS (API REAL)
+# ==========================================
+@tree.command(name="analisar_ip", description="Faz um lookup real a um IP para detetar anomalias (Threat Intel)")
+async def analisar_ip(interaction: discord.Interaction, ip: str):
+    await interaction.response.defer() # Dá tempo ao bot para contactar a API
     
-    # Simula a procura numa base de dados por nós ligados a este IP
-    qtd_contas = random.randint(3, 7) # Gera um número aleatório de contas falsas
-    
-    # Desenho da rede em ASCII (para dar aquele aspeto de sistema terminal/hacker)
-    grafico_rede = f"""```text
-      [IP ALVO: {ip_suspeito}]
-            │
-    ┌───────┼───────┐
-    │       │       │
- [User_A] [User_B] [User_C]
-    │       │       │
-    └───────┴───────┘
-     Dispositivo Partilhado
-     Device_ID: A8F9-2B3C
-```"""
-    
-    texto_analise = f"""
-    **🔍 ANÁLISE DE LIGAÇÕES (GRAPH NETWORK)**
-    
-    Foi detetado um aglomerado anómalo (*Fraud Ring*) associado ao IP `{ip_suspeito}`.
-    
-    • **Contas associadas:** {qtd_contas} contas criadas nas últimas 2 horas.
-    • **Padrão:** Todas as contas partilham o mesmo Device ID e tentaram compras abaixo de $40 (limite comum para evitar alertas).
-    • **Alerta EDA:** Conforme a nossa análise exploratória, o uso de dispositivos partilhados aumenta o risco de fraude para 52.5%.
-    """
-    
-    embed = discord.Embed(title="🕸️ Mapeamento de Rede de Fraude Concluído", description=texto_analise, color=0x8A2BE2)
-    embed.add_field(name="Grafo de Ligações", value=grafico_rede, inline=False)
-    embed.add_field(name="Ação de Mitigação", value="Bloqueio do IP e do Device ID (Blacklisting).", inline=False)
-    embed.set_footer(text="Baseado em conceitos de Graph Neural Networks aplicados a Finanças.")
-    
-    await interaction.response.send_message(embed=embed)
+    try:
+        # Faz um pedido HTTP real a uma API gratuita de OSINT
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,isp,proxy,hosting,query"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        
+        with urllib.request.urlopen(req) as response:
+            dados = json.loads(response.read().decode())
+            
+        if dados.get("status") != "success":
+            await interaction.followup.send("❌ IP inválido ou reservado (ex: IPs de rede local como 192.168.x.x). Tenta um IP público.")
+            return
+            
+        # Analisa os dados reais devolvidos
+        is_proxy = dados.get("proxy", False)
+        is_hosting = dados.get("hosting", False)
+        
+        if is_proxy or is_hosting:
+            risco = "🔴 ALTO (Uso de VPN, Proxy ou Datacenter detetado)"
+            cor = 0xFF0000
+        else:
+            risco = "🟢 BAIXO (Ligação residencial normal)"
+            cor = 0x00FF00
+            
+        embed = discord.Embed(title="🌐 Threat Intelligence: Análise de IP Real", color=cor)
+        embed.add_field(name="IP Alvo", value=f"`{dados.get('query')}`", inline=True)
+        embed.add_field(name="País", value=dados.get('country', 'Desconhecido'), inline=True)
+        embed.add_field(name="ISP / Operadora", value=dados.get('isp', 'Desconhecido'), inline=False)
+        embed.add_field(name="Risco de Mascaramento", value=risco, inline=False)
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao contactar o servidor de threat intel: {str(e)}")
     
 client.run(DISCORD_TOKEN)
