@@ -234,7 +234,7 @@ async def analisar(
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="relatorio", description="Gera um relatório de incidente de fraude detalhado (Skill Extra)")
+@tree.command(name="relatorio", description="Gera um relatório de incidente de fraude detalhado (Skill Extra)")
 async def relatorio(interaction: discord.Interaction, id_transacao: str, valor: float, pais: str, tipo_fraude: str):
     
     # Criação do texto do relatório com formatação
